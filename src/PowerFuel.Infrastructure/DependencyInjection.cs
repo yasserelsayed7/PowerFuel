@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PowerFuel.Application.Common;
 using PowerFuel.Application.Interfaces;
 using PowerFuel.Infrastructure.Data;
+using PowerFuel.Infrastructure.Payments;
 using PowerFuel.Infrastructure.Services;
 
 namespace PowerFuel.Infrastructure;
@@ -27,14 +28,17 @@ public static class DependencyInjection
         });
 
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
+        services.Configure<StripeSettings>(configuration.GetSection(StripeSettings.SectionName));
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
+        services.AddScoped<IMediaUrlService, MediaUrlService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IEquipmentService, EquipmentService>();
         services.AddScoped<ICoachService, CoachService>();
         services.AddScoped<ICartService, CartService>();
         services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<ICategoryService, CategoryService>();
         return services;

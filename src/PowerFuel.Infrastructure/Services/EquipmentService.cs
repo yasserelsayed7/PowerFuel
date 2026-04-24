@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PowerFuel.Application.Common;
 using PowerFuel.Application.DTOs.Equipment;
 using PowerFuel.Application.Interfaces;
 using PowerFuel.Infrastructure.Data;
@@ -8,8 +9,13 @@ namespace PowerFuel.Infrastructure.Services;
 public class EquipmentService : IEquipmentService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IMediaUrlService _mediaUrlService;
 
-    public EquipmentService(ApplicationDbContext context) => _context = context;
+    public EquipmentService(ApplicationDbContext context, IMediaUrlService mediaUrlService)
+    {
+        _context = context;
+        _mediaUrlService = mediaUrlService;
+    }
 
     public async Task<EquipmentDto?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
@@ -28,7 +34,7 @@ public class EquipmentService : IEquipmentService
             e.Price,
             e.OriginalPrice,
             e.IsOnSale,
-            e.ImageUrl,
+            _mediaUrlService.ToAbsoluteUrl(e.ImageUrl),
             e.StockQuantity,
             e.CategoryId,
             e.Category?.Name,
@@ -52,7 +58,7 @@ public class EquipmentService : IEquipmentService
                 e.Price,
                 e.OriginalPrice,
                 e.IsOnSale,
-                e.ImageUrl,
+                _mediaUrlService.ToAbsoluteUrl(e.ImageUrl),
                 e.Category != null ? e.Category.Name : null,
                 e.FeaturedCoachId
             ))

@@ -1,16 +1,18 @@
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Microsoft.Extensions.FileProviders;
+using PowerFuel.API.Services.FitnessCoach;
 using PowerFuel.Infrastructure;
 using PowerFuel.Infrastructure.Data;
-using Stripe;
 using Swashbuckle.AspNetCore.Filters;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -43,6 +45,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddFitnessCoach(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddCors(options =>
 {
@@ -52,14 +55,28 @@ builder.Services.AddCors(options =>
     });
 });
 
-
-
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
+
+// Serve frontend-provided assets from: src/PowerFuel.API/assets -> /assets/*
+var assetsPath = builder.Configuration["Media:AssetsPhysicalPath"];
+if (string.IsNullOrWhiteSpace(assetsPath))
+{
+    assetsPath = Path.Combine(app.Environment.ContentRootPath, "assets");
+}
+
+if (Directory.Exists(assetsPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(assetsPath),
+        RequestPath = "/assets"
+    });
 }
 
 app.UseCors();
@@ -71,7 +88,10 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await db.Database.MigrateAsync();
-    await DbSeed.SeedAsync(db, scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+    await DbSeed.SeedAsync(
+        db,
+        scope.ServiceProvider.GetRequiredService<ILogger<Program>>(),
+        builder.Configuration["Media:AssetsPhysicalPath"]);
 }
 
 app.Run();

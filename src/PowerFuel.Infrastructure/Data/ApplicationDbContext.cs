@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CartItem> CartItems => Set<CartItem>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<EquipmentReview> EquipmentReviews => Set<EquipmentReview>();
 
@@ -26,6 +27,16 @@ public class ApplicationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        modelBuilder.Entity<Payment>()
+            .HasIndex(p => p.StripePaymentIntentId)
+            .IsUnique();
+
+        modelBuilder.Entity<Payment>()
+            .HasOne<Order>()
+            .WithMany(o => o.Payments)
+            .HasForeignKey(p => p.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<CartItem>()
             .HasOne(ci => ci.Product)

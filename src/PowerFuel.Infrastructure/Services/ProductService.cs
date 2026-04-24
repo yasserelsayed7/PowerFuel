@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PowerFuel.Application.Common;
 using PowerFuel.Application.DTOs.Products;
 using PowerFuel.Application.Interfaces;
 using PowerFuel.Domain.Entities;
@@ -9,8 +10,13 @@ namespace PowerFuel.Infrastructure.Services;
 public class ProductService : IProductService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IMediaUrlService _mediaUrlService;
 
-    public ProductService(ApplicationDbContext context) => _context = context;
+    public ProductService(ApplicationDbContext context, IMediaUrlService mediaUrlService)
+    {
+        _context = context;
+        _mediaUrlService = mediaUrlService;
+    }
 
     public async Task<ProductDto?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
@@ -33,7 +39,7 @@ public class ProductService : IProductService
                 p.Price,
                 p.OriginalPrice,
                 p.IsOnSale,
-                p.ImageUrl,
+                _mediaUrlService.ToAbsoluteUrl(p.ImageUrl),
                 p.AverageRating,
                 p.ReviewCount,
                 p.Category != null ? p.Category.Name : null
@@ -56,7 +62,7 @@ public class ProductService : IProductService
                 p.Price,
                 p.OriginalPrice,
                 p.IsOnSale,
-                p.ImageUrl,
+                _mediaUrlService.ToAbsoluteUrl(p.ImageUrl),
                 p.AverageRating,
                 p.ReviewCount,
                 p.Category != null ? p.Category.Name : null
@@ -64,7 +70,7 @@ public class ProductService : IProductService
             .ToListAsync(cancellationToken);
     }
 
-    private static ProductDto MapToDto(Product p) => new(
+    private ProductDto MapToDto(Product p) => new(
         p.Id,
         p.Name,
         p.ShortDescription,
@@ -73,7 +79,7 @@ public class ProductService : IProductService
         p.Price,
         p.OriginalPrice,
         p.IsOnSale,
-        p.ImageUrl,
+        _mediaUrlService.ToAbsoluteUrl(p.ImageUrl),
         p.StockQuantity,
         p.CategoryId,
         p.Category?.Name,

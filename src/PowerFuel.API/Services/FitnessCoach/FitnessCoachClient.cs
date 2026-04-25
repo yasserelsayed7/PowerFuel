@@ -1,67 +1,90 @@
-using System.Net.Http.Headers;
-using System.Text;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PowerFuel.API.Services.FitnessCoach;
 
-public sealed class FitnessCoachClient(HttpClient httpClient) : IFitnessCoachClient
+public sealed class FitnessCoachApiException(HttpStatusCode statusCode, string responseBody) : Exception(
+    $"Fitness coach API returned {(int)statusCode}: {responseBody}")
 {
-    private static readonly MediaTypeHeaderValue JsonMedia = MediaTypeHeaderValue.Parse("application/json; charset=utf-8");
+    public HttpStatusCode StatusCode { get; } = statusCode;
 
-    public async Task<JsonElement> StartSessionAsync(JsonElement requestBody, CancellationToken cancellationToken = default)
+    public string ResponseBody { get; } = responseBody;
+}
+
+public sealed class FitnessCoachClient(HttpClient http) : IFitnessCoachClient
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        var text = requestBody.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
-            ? "{}"
-            : requestBody.GetRawText();
-        return await PostJsonAsync("start-session", text, cancellationToken);
-    }
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
-    public async Task<JsonElement> AnalyzeFrameAsync(JsonElement requestBody, CancellationToken cancellationToken = default)
-    {
-        return await PostJsonAsync("analyze-frame", requestBody.GetRawText(), cancellationToken);
-    }
+    public Task<StartSessionResponseDto> StartSessionAsync(StartSessionRequestDto request, CancellationToken cancellationToken = default) =>
+        SendAsync<StartSessionResponseDto>(HttpMethod.Post, "start-session", request, cancellationToken);
 
-    public async Task<JsonElement> EndSessionAsync(JsonElement requestBody, CancellationToken cancellationToken = default)
-    {
-        return await PostJsonAsync("end-session", requestBody.GetRawText(), cancellationToken);
-    }
+    public Task<AnalyzeFrameResponseDto> AnalyzeFrameAsync(AnalyzeFrameRequestDto request, CancellationToken cancellationToken = default) =>
+        SendAsync<AnalyzeFrameResponseDto>(HttpMethod.Post, "analyze-frame", request, cancellationToken);
 
-    public async Task<JsonElement> GetSessionSummaryAsync(string sessionId, CancellationToken cancellationToken = default)
+    public Task<SessionSummaryResponseDto> EndSessionAsync(EndSessionRequestDto request, CancellationToken cancellationToken = default) =>
+        SendAsync<SessionSummaryResponseDto>(HttpMethod.Post, "end-session", request, cancellationToken);
+
+    public async Task<SessionSummaryResponseDto> GetSessionSummaryAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             throw new ArgumentException("Session id is required.", nameof(sessionId));
 
-        // session_id in path — encode for safety
-        var path = "session-summary/" + Uri.EscapeDataString(sessionId);
-        using var response = await httpClient.GetAsync(path, cancellationToken);
-        return await ReadJsonOrThrowAsync(response, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"session-summary/{Uri.EscapeDataString(sessionId)}");
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await ReadSuccessAsync<SessionSummaryResponseDto>(response, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<JsonElement> PostJsonAsync(string relativePath, string json, CancellationToken cancellationToken)
+    private async Task<T> SendAsync<T>(HttpMethod method, string relativeUri, object? body, CancellationToken cancellationToken)
     {
-        using var content = new StringContent(json, Encoding.UTF8);
-        content.Headers.ContentType = JsonMedia;
-        using var response = await httpClient.PostAsync(relativePath, content, cancellationToken);
-        return await ReadJsonOrThrowAsync(response, cancellationToken);
+        using var request = new HttpRequestMessage(method, relativeUri);
+        if (body is not null)
+            request.Content = JsonContent.Create(body, options: JsonOptions);
+
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await ReadSuccessAsync<T>(response, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<JsonElement> ReadJsonOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        try
+        {
+            return await http
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new FitnessCoachApiException(
+                HttpStatusCode.ServiceUnavailable,
+                "Cannot reach the fitness coach service. Start it on the host/port set in FitnessCoach:BaseUrl (default http://localhost:8000). "
+                + ex.Message);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new FitnessCoachApiException(
+                HttpStatusCode.GatewayTimeout,
+                "The fitness coach service did not respond in time.");
+        }
+    }
+
+    private static async Task<T> ReadSuccessAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
         if (response.IsSuccessStatusCode)
         {
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                using var empty = JsonDocument.Parse("{}");
-                return empty.RootElement.Clone();
-            }
-            using var doc = JsonDocument.Parse(body);
-            return doc.RootElement.Clone();
+            var result = await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken).ConfigureAwait(false);
+            if (result is null)
+                throw new InvalidOperationException("Fitness coach API returned an empty JSON body.");
+            return result;
         }
 
-        throw new HttpRequestException(
-            $"Fitness coach service returned {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}",
-            null,
-            response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        throw new FitnessCoachApiException(response.StatusCode, body);
     }
 }

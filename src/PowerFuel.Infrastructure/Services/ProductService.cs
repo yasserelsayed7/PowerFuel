@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using PowerFuel.Application.Common;
 using PowerFuel.Application.DTOs.Products;
 using PowerFuel.Application.Interfaces;
+using PowerFuel.Application.Media;
 using PowerFuel.Domain.Entities;
 using PowerFuel.Infrastructure.Data;
 
@@ -10,12 +10,12 @@ namespace PowerFuel.Infrastructure.Services;
 public class ProductService : IProductService
 {
     private readonly ApplicationDbContext _context;
-    private readonly IMediaUrlService _mediaUrlService;
+    private readonly IMediaUrlGenerator _mediaUrls;
 
-    public ProductService(ApplicationDbContext context, IMediaUrlService mediaUrlService)
+    public ProductService(ApplicationDbContext context, IMediaUrlGenerator mediaUrls)
     {
         _context = context;
-        _mediaUrlService = mediaUrlService;
+        _mediaUrls = mediaUrls;
     }
 
     public async Task<ProductDto?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -28,46 +28,51 @@ public class ProductService : IProductService
 
     public async Task<IReadOnlyList<ProductListDto>> GetBestSellersAsync(int count = 8, CancellationToken cancellationToken = default)
     {
-        return await _context.Products.AsNoTracking()
+        var products = await _context.Products.AsNoTracking()
+            .Include(x => x.Category)
             .Where(x => x.IsBestSeller)
             .OrderByDescending(x => x.ReviewCount)
             .Take(count)
-            .Select(p => new ProductListDto(
-                p.Id,
-                p.Name,
-                p.ShortDescription,
-                p.Price,
-                p.OriginalPrice,
-                p.IsOnSale,
-                _mediaUrlService.ToAbsoluteUrl(p.ImageUrl),
-                p.AverageRating,
-                p.ReviewCount,
-                p.Category != null ? p.Category.Name : null
-            ))
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken); // ← جيب من DB الأول
+
+        return products.Select(p => new ProductListDto(
+            p.Id,
+            p.Name,
+            p.ShortDescription,
+            p.Price,
+            p.OriginalPrice,
+            p.IsOnSale,
+            _mediaUrls.ProductImageUrl(p.ImageUrl), // ← اعمل mapping في الـ memory
+            p.AverageRating,
+            p.ReviewCount,
+            p.Category?.Name
+        )).ToList();
     }
 
     public async Task<IReadOnlyList<ProductListDto>> ListAsync(string? categorySlug = null, string? search = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Products.AsNoTracking().Include(x => x.Category).AsQueryable();
+
         if (!string.IsNullOrWhiteSpace(categorySlug))
             query = query.Where(p => p.Category != null && p.Category.Slug == categorySlug);
+
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(p => p.Name.Contains(search) || (p.ShortDescription != null && p.ShortDescription.Contains(search)));
-        return await query
-            .Select(p => new ProductListDto(
-                p.Id,
-                p.Name,
-                p.ShortDescription,
-                p.Price,
-                p.OriginalPrice,
-                p.IsOnSale,
-                _mediaUrlService.ToAbsoluteUrl(p.ImageUrl),
-                p.AverageRating,
-                p.ReviewCount,
-                p.Category != null ? p.Category.Name : null
-            ))
-            .ToListAsync(cancellationToken);
+
+        var products = await query.ToListAsync(cancellationToken); // ← جيب من DB الأول
+
+        return products.Select(p => new ProductListDto(
+            p.Id,
+            p.Name,
+            p.ShortDescription,
+            p.Price,
+            p.OriginalPrice,
+            p.IsOnSale,
+            _mediaUrls.ProductImageUrl(p.ImageUrl), // ← اعمل mapping في الـ memory
+            p.AverageRating,
+            p.ReviewCount,
+            p.Category?.Name
+        )).ToList();
     }
 
     private ProductDto MapToDto(Product p) => new(
@@ -79,7 +84,7 @@ public class ProductService : IProductService
         p.Price,
         p.OriginalPrice,
         p.IsOnSale,
-        _mediaUrlService.ToAbsoluteUrl(p.ImageUrl),
+        _mediaUrls.ProductImageUrl(p.ImageUrl),
         p.StockQuantity,
         p.CategoryId,
         p.Category?.Name,

@@ -10,18 +10,14 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<FitnessCoachOptions>()
             .Bind(configuration.GetSection(FitnessCoachOptions.SectionName))
-            .Validate(o => Uri.TryCreate(o.BaseUrl, UriKind.Absolute, out _), "FitnessCoach:BaseUrl must be an absolute URL.")
+            .Validate(o => !string.IsNullOrWhiteSpace(o.BaseUrl), $"{FitnessCoachOptions.SectionName}:{nameof(FitnessCoachOptions.BaseUrl)} is required.")
             .ValidateOnStart();
 
         services.AddHttpClient<IFitnessCoachClient, FitnessCoachClient>((sp, client) =>
         {
-            var o = sp.GetRequiredService<IOptions<FitnessCoachOptions>>().Value;
-            var baseUrl = o.BaseUrl.Trim().TrimEnd('/') + "/";
-            client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
-            client.Timeout = TimeSpan.FromMinutes(2);
-            client.DefaultRequestHeaders.Remove("X-API-Key");
-            if (!string.IsNullOrWhiteSpace(o.ApiKey))
-                client.DefaultRequestHeaders.Add("X-API-Key", o.ApiKey);
+            var options = sp.GetRequiredService<IOptions<FitnessCoachOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/", UriKind.Absolute);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-API-Key", options.ApiKey);
         });
 
         return services;

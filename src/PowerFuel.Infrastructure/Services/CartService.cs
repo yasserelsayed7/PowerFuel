@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using PowerFuel.Application.Common;
 using PowerFuel.Application.DTOs.Cart;
 using PowerFuel.Application.Interfaces;
+using PowerFuel.Application.Media;
 using CartEntity = PowerFuel.Domain.Entities.Cart;
 
 using PowerFuel.Domain.Entities;
@@ -12,12 +12,12 @@ namespace PowerFuel.Infrastructure.Services;
 public class CartService : ICartService
 {
     private readonly ApplicationDbContext _context;
-    private readonly IMediaUrlService _mediaUrlService;
+    private readonly IMediaUrlGenerator _mediaUrls;
 
-    public CartService(ApplicationDbContext context, IMediaUrlService mediaUrlService)
+    public CartService(ApplicationDbContext context, IMediaUrlGenerator mediaUrls)
     {
         _context = context;
-        _mediaUrlService = mediaUrlService;
+        _mediaUrls = mediaUrls;
     }
 
     public async Task<CartDto?> GetCartAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -108,7 +108,9 @@ public class CartService : ICartService
                 ci.UnitPrice,
                 ci.Quantity,
                 ci.UnitPrice * ci.Quantity,
-                _mediaUrlService.ToAbsoluteUrl(ci.Product?.ImageUrl ?? ci.Equipment?.ImageUrl)
+                ci.Product != null
+                    ? _mediaUrls.ProductImageUrl(ci.Product.ImageUrl)
+                    : _mediaUrls.EquipmentImageUrl(ci.Equipment?.ImageUrl)
             );
         }).ToList();
         return new CartDto(cart.Id, items, items.Sum(i => i.LineTotal), items.Sum(i => i.Quantity));

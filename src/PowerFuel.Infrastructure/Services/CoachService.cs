@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using PowerFuel.Application.Common;
 using PowerFuel.Application.DTOs.Bookings;
 using PowerFuel.Application.DTOs.Coaches;
 using PowerFuel.Application.Interfaces;
+using PowerFuel.Application.Media;
 using PowerFuel.Domain.Entities;
 using PowerFuel.Infrastructure.Data;
 
@@ -11,12 +11,12 @@ namespace PowerFuel.Infrastructure.Services;
 public class CoachService : ICoachService
 {
     private readonly ApplicationDbContext _context;
-    private readonly IMediaUrlService _mediaUrlService;
+    private readonly IMediaUrlGenerator _mediaUrls;
 
-    public CoachService(ApplicationDbContext context, IMediaUrlService mediaUrlService)
+    public CoachService(ApplicationDbContext context, IMediaUrlGenerator mediaUrls)
     {
         _context = context;
-        _mediaUrlService = mediaUrlService;
+        _mediaUrls = mediaUrls;
     }
 
     public async Task<CoachDto?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -28,7 +28,7 @@ public class CoachService : ICoachService
     public async Task<IReadOnlyList<CoachListDto>> ListAsync(CancellationToken cancellationToken = default)
     {
         return await _context.Coaches.AsNoTracking()
-            .Select(c => new CoachListDto(c.Id, c.FirstName + " " + c.LastName, c.Title, c.Specialization, _mediaUrlService.ToAbsoluteUrl(c.ProfilePictureUrl)))
+            .Select(c => new CoachListDto(c.Id, c.FirstName + " " + c.LastName, c.Title, c.Specialization, _mediaUrls.CoachProfileImageUrl(c.ProfilePictureUrl)))
             .ToListAsync(cancellationToken);
     }
 
@@ -76,7 +76,7 @@ public class CoachService : ICoachService
         c.FirstName + " " + c.LastName,
         c.Title,
         c.Specialization,
-        _mediaUrlService.ToAbsoluteUrl(c.ProfilePictureUrl),
+        _mediaUrls.CoachProfileImageUrl(c.ProfilePictureUrl),
         c.AboutDescription,
         c.YearsExperience,
         c.HappyClientsCount,
